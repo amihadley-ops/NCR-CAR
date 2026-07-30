@@ -109,6 +109,8 @@
       <button class="add" onclick="addNCR()">+ New NCR</button>
       <button class="ghost" onclick="document.getElementById('ncr-upload').click()">⬆ Upload NCR (.docx)</button>
       <input type="file" id="ncr-upload" accept=".docx" multiple style="display:none" onchange="handleUpload(this,'ncr')">
+      <button class="ghost" onclick="document.getElementById('ncr-import').click()">↦ Import from Generator</button>
+      <input type="file" id="ncr-import" accept=".ncrcar,.json" multiple style="display:none" onchange="handleImport(this,'ncr')">
       <button class="ghost" onclick="exportCSV('ncr')">Export CSV</button>
     </div>
     <div class="legend">Aging: <b>Watch</b> at 14 days · <b>Aging</b> at 30 days · <b>Overdue</b> past Target Close.</div>
@@ -129,6 +131,8 @@
       <button class="add" onclick="addCAR()">+ New CAR</button>
       <button class="ghost" onclick="document.getElementById('car-upload').click()">⬆ Upload CAR (.docx)</button>
       <input type="file" id="car-upload" accept=".docx" multiple style="display:none" onchange="handleUpload(this,'car')">
+      <button class="ghost" onclick="document.getElementById('car-import').click()">↦ Import from Generator</button>
+      <input type="file" id="car-import" accept=".ncrcar,.json" multiple style="display:none" onchange="handleImport(this,'car')">
       <button class="ghost" onclick="exportCSV('car')">Export CSV</button>
     </div>
     <div class="legend">One NCR can spawn multiple CARs — set <b>Parent NCR#</b> to link. Unmatched parents flag red. Aging: <b>Watch</b> 21d · <b>Aging</b> 45d · <b>Overdue</b> past Target Close.</div>
@@ -442,6 +446,41 @@ async function handleUpload(input,type){
   save();
   let msg=`Imported ${added} ${type.toUpperCase()}${added!==1?"s":""}. Review the new row(s) for anything the form left blank.`;
   if(failed.length) msg+="\n\nCouldn't parse:\n- "+failed.join("\n- ");
+  alert(msg);
+}
+
+// ---- Import from the NCR/CAR Generator (.ncrcar / .json) ----
+// The generator writes the same field shape parseDocx() returns, so we
+// rebuild the `p` accessor object and reuse addParsedNCR/addParsedCAR.
+async function handleImport(input,type){
+  const files=[...input.files]; input.value="";
+  let added=0, failed=[];
+  for(const f of files){
+    try{
+      const data=JSON.parse(await f.text());
+      const recs = Array.isArray(data)?data:[data];
+      for(const rec of recs){
+        const kind = (rec.kind||type).toLowerCase()==="car" ? "car" : "ncr";
+        const hmap = {};
+        for(const k in (rec.header||{})) hmap[k.toLowerCase()] = rec.header[k];
+        const p = {
+          header:(k)=>{ k=k.toLowerCase(); for(const key in hmap){ if(key.startsWith(k)) return hmap[key]; } return ""; },
+          whys: rec.whys || ["","","","","",""],
+          disposition: rec.disposition || "",
+          description: rec.description || "",
+          qty: rec.qty || "",
+          containment: rec.containment || "",
+          problem: rec.problem || "",
+        };
+        if(p.whys.length<6) p.whys=[...p.whys,"","","","","",""].slice(0,6);
+        (kind==="ncr"?addParsedNCR:addParsedCAR)(p);
+        added++;
+      }
+    }catch(e){ failed.push(f.name+" ("+e.message+")"); }
+  }
+  save();
+  let msg=`Imported ${added} record${added!==1?"s":""} from the generator. Review the new row(s) for anything left blank.`;
+  if(failed.length) msg+="\n\nCouldn't import:\n- "+failed.join("\n- ");
   alert(msg);
 }
 
